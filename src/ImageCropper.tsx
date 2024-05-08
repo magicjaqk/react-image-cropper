@@ -3,12 +3,16 @@ import Slider from "./radix-ui/Slider";
 import { useGesture } from "@use-gesture/react";
 
 type Props = {
+  // Manipulation props -- State and setters
   zoom?: number;
   setZoom?: (zoom: number) => void;
   rotation?: number;
   setRotation?: (rotation: number) => void;
   imageSrc?: string;
   setImageSrc?: (imageSrc: string) => void;
+
+  // Cropped image props
+  resolutionPx?: number; // Resolution of the cropped image (default 1)
 };
 
 interface Vector2 {
@@ -16,12 +20,12 @@ interface Vector2 {
   y: number;
 }
 
-const ImageCropper = (props: Props) => {
-  // Refs
+const ImageCropper = ({ resolutionPx, ...props }: Props) => {
+  // Refs for canvas and container
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
-  // State
+  // Data refs
   const imageSrc = React.useRef<string>("");
   const zoom = React.useRef<number>(1);
   const rotation = React.useRef<number>(0);
@@ -33,17 +37,17 @@ const ImageCropper = (props: Props) => {
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
 
-    // Clear canvas
-    // context.clearRect(0, 0, canvas.width, canvas.height);
-
     // Load image
     const image = new Image();
     image.src = imageSrc.current;
     image.onload = () => {
       const { width, height } = image;
-      const size = Math.min(width, height);
 
-      // Set canvas size
+      // Set canvas resolution
+      const size =
+        resolutionPx ??
+        canvasContainerRef.current?.getBoundingClientRect().width ??
+        512;
       canvas.width = size;
       canvas.height = size;
 
@@ -54,17 +58,17 @@ const ImageCropper = (props: Props) => {
       const sy = 0;
 
       // Dimensions for drawing
-      const dWidth = sWidth * zoom.current;
-      const dHeight = sHeight * zoom.current;
+      const ratio = sWidth > sHeight ? sHeight / size : sWidth / size;
+      const dWidth = (sWidth * zoom.current) / ratio;
+      const dHeight = (sHeight * zoom.current) / ratio;
       const dx = -dWidth / 2;
       const dy = -dHeight / 2;
 
-      context.translate(
-        size / 2 + (pan.current.x * dWidth) / 2,
-        size / 2 + (pan.current.y * dHeight) / 2,
-      );
+      // Position and rotate image
+      context.translate(size / 2 + pan.current.x, size / 2 + pan.current.y);
       context.rotate((rotation.current * Math.PI) / 180);
-      // context.scale(zoom.current, zoom.current);
+
+      // Draw image
       context.drawImage(
         image, // source image
         sx, // offset crop x from source image
@@ -80,10 +84,6 @@ const ImageCropper = (props: Props) => {
   }
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    // Reset zoom and rotation
-    zoom.current = 0.5;
-    rotation.current = 0;
-
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -91,6 +91,10 @@ const ImageCropper = (props: Props) => {
         const dataUrl = e.target?.result;
         if (typeof dataUrl === "string") {
           imageSrc.current = dataUrl;
+
+          handlePanXChange(0);
+          handleZoomChange(1);
+          handleRotationChange(0);
 
           // Update canvas
           updateCanvas();
@@ -100,32 +104,32 @@ const ImageCropper = (props: Props) => {
     }
   }
 
-  function handleZoomChange(value: number[]) {
-    const newZoom = value[0];
+  function handleZoomChange(value: number) {
+    const newZoom = Math.max(0.25, value);
     zoom.current = newZoom;
 
     // Update canvas
     updateCanvas();
   }
 
-  function handleRotationChange(value: number[]) {
-    const newRotation = value[0];
+  function handleRotationChange(value: number) {
+    const newRotation = value;
     rotation.current = newRotation;
 
     // Update canvas
     updateCanvas();
   }
 
-  function handlePanXChange(value: number[]) {
-    const x = value[0];
+  function handlePanXChange(value: number) {
+    const x = value;
     pan.current = { ...pan.current, x };
 
     // Update canvas
     updateCanvas();
   }
 
-  function handlePanYChange(value: number[]) {
-    const y = value[0];
+  function handlePanYChange(value: number) {
+    const y = value;
     pan.current = { ...pan.current, y };
 
     // Update canvas
@@ -149,38 +153,34 @@ const ImageCropper = (props: Props) => {
 
   // Gesture handling
   // MacOS Trackpad gestures need to be handled via ref and event listeners; they are not accessible in React
-  React.useEffect(() => {
-    const trackpadGestureHandler = (e: WheelEvent) => {
-      if (e.ctrlKey) {
-        zoom.current += -e.deltaY / 100;
-        // Limit zoom min to 0.5
-        zoom.current = Math.max(0.25, zoom.current);
+  // React.useEffect(() => {
+  //   const trackpadGestureHandler = (e: WheelEvent) => {
+  //     if (e.ctrlKey) {
+  //       handleZoomChange(zoom.current + -e.deltaY / 100);
 
-        // Update canvas
-        updateCanvas();
-      }
-    };
+  //       // Update canvas
+  //       updateCanvas();
+  //     }
+  //   };
 
-    window.addEventListener("wheel", trackpadGestureHandler);
-    return () => {
-      window.removeEventListener("wheel", trackpadGestureHandler);
-    };
-  }, []);
+  //   window.addEventListener("wheel", trackpadGestureHandler);
+  //   return () => {
+  //     window.removeEventListener("wheel", trackpadGestureHandler);
+  //   };
+  // }, []);
 
   useGesture(
     {
-      onDrag: ({ delta: [mx, my] }) => {
-        pan.current = {
-          x: pan.current.x + mx / 100,
-          y: pan.current.y + my / 100,
-        };
+      onDrag: ({ offset: [mx, my] }) => {
+        handlePanXChange(mx);
+        handlePanYChange(my);
 
         // Update canvas
         updateCanvas();
       },
       onPinch: ({ offset: [scaleOffset, pinchAngleOffset] }) => {
-        zoom.current = scaleOffset;
-        rotation.current = pinchAngleOffset;
+        handleZoomChange(scaleOffset);
+        handleRotationChange(pinchAngleOffset);
 
         // Update canvas
         updateCanvas();
@@ -196,7 +196,7 @@ const ImageCropper = (props: Props) => {
       {/* Image Preview */}
       <div
         ref={canvasContainerRef}
-        className="relative aspect-square w-full touch-none overflow-clip rounded bg-white/10"
+        className="relative aspect-square w-full touch-none overflow-clip rounded bg-white/10 hover:cursor-move"
       >
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       </div>
@@ -205,35 +205,35 @@ const ImageCropper = (props: Props) => {
           <input type="file" accept="image/*" onChange={handleImageChange} />
           <Slider
             ariaLabel="Zoom"
-            defaultValue={[1]}
+            defaultValue={[zoom.current]}
             min={0.5}
             max={1.5}
             step={0.001}
-            onValueChange={handleZoomChange}
+            onValueChange={([value]) => handleZoomChange(value)}
           />
           <Slider
             ariaLabel="Rotation"
-            defaultValue={[0]}
+            defaultValue={[rotation.current]}
             min={-180}
             max={180}
             step={1}
-            onValueChange={handleRotationChange}
+            onValueChange={([value]) => handleRotationChange(value)}
           />
           <Slider
             ariaLabel="Pan X"
-            defaultValue={[0]}
-            min={-1}
-            max={1}
-            step={0.001}
-            onValueChange={handlePanXChange}
+            defaultValue={[pan.current.x]}
+            min={-200}
+            max={200}
+            step={1}
+            onValueChange={([value]) => handlePanXChange(value)}
           />
           <Slider
             ariaLabel="Pan Y"
-            defaultValue={[0]}
-            min={-1}
-            max={1}
-            step={0.001}
-            onValueChange={handlePanYChange}
+            defaultValue={[pan.current.y]}
+            min={-200}
+            max={200}
+            step={1}
+            onValueChange={([value]) => handlePanYChange(value)}
           />
         </div>
 
