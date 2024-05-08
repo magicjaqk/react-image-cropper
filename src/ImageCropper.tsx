@@ -1,5 +1,6 @@
 import React from "react";
 import Slider from "./radix-ui/Slider";
+import { useGesture } from "@use-gesture/react";
 
 type Props = {
   zoom?: number;
@@ -17,6 +18,7 @@ interface Vector2 {
 
 const ImageCropper = (props: Props) => {
   // Refs
+  const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
   // State
@@ -145,10 +147,57 @@ const ImageCropper = (props: Props) => {
     }
   }
 
+  // Gesture handling
+  // MacOS Trackpad gestures need to be handled via ref and event listeners; they are not accessible in React
+  React.useEffect(() => {
+    const trackpadGestureHandler = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        zoom.current += -e.deltaY / 100;
+        // Limit zoom min to 0.5
+        zoom.current = Math.max(0.25, zoom.current);
+
+        // Update canvas
+        updateCanvas();
+      }
+    };
+
+    window.addEventListener("wheel", trackpadGestureHandler);
+    return () => {
+      window.removeEventListener("wheel", trackpadGestureHandler);
+    };
+  }, []);
+
+  useGesture(
+    {
+      onDrag: ({ delta: [mx, my] }) => {
+        pan.current = {
+          x: pan.current.x + mx / 100,
+          y: pan.current.y + my / 100,
+        };
+
+        // Update canvas
+        updateCanvas();
+      },
+      onPinch: ({ offset: [scaleOffset, pinchAngleOffset] }) => {
+        zoom.current = scaleOffset;
+        rotation.current = pinchAngleOffset;
+
+        // Update canvas
+        updateCanvas();
+      },
+    },
+    {
+      target: canvasContainerRef,
+    },
+  );
+
   return (
     <>
       {/* Image Preview */}
-      <div className="relative aspect-square w-full overflow-clip rounded bg-white/10">
+      <div
+        ref={canvasContainerRef}
+        className="relative aspect-square w-full touch-none overflow-clip rounded bg-white/10"
+      >
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       </div>
       <form className="mt-6 w-full" onSubmit={handleSubmit}>
