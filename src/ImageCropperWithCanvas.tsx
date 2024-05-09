@@ -20,7 +20,7 @@ interface Vector2 {
   y: number;
 }
 
-const ImageCropper = ({ resolutionPx, ...props }: Props) => {
+const ImageCropperWithCanvas = ({ resolutionPx, ...props }: Props) => {
   // Refs for canvas and container
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
@@ -34,7 +34,9 @@ const ImageCropper = ({ resolutionPx, ...props }: Props) => {
   function updateCanvas() {
     // Get canvas and context
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
+    const context = canvas?.getContext("2d", {
+      alpha: false,
+    });
     if (!canvas || !context) return;
 
     // Load image
@@ -71,14 +73,14 @@ const ImageCropper = ({ resolutionPx, ...props }: Props) => {
       // Draw image
       context.drawImage(
         image, // source image
-        sx, // offset crop x from source image
-        sy, // offset crop y from source image
-        sWidth, // crop width from source image
-        sHeight, // crop height from source image
-        dx, // x position on canvas
-        dy, // y position on canvas
-        dWidth, // width on canvas
-        dHeight, // height on canvas
+        Math.floor(sx), // offset crop x from source image
+        Math.floor(sy), // offset crop y from source image
+        Math.floor(sWidth), // crop width from source image
+        Math.floor(sHeight), // crop height from source image
+        Math.floor(dx), // x position on canvas
+        Math.floor(dy), // y position on canvas
+        Math.floor(dWidth), // width on canvas
+        Math.floor(dHeight), // height on canvas
       );
     };
   }
@@ -248,4 +250,4 @@ const ImageCropper = ({ resolutionPx, ...props }: Props) => {
   );
 };
 
-export default ImageCropper;
+export default ImageCropperWithCanvas;
