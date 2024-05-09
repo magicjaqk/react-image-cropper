@@ -6,14 +6,27 @@ import useMeasure from "react-use-measure";
 type Props = {
   // Manipulation props -- State and setters
   zoom?: number;
-  setZoom?: (zoom: number) => void;
+  setZoom?: React.Dispatch<React.SetStateAction<number>>;
   rotation?: number;
-  setRotation?: (rotation: number) => void;
+  setRotation?: React.Dispatch<React.SetStateAction<number>>;
   imageSrc?: string;
-  setImageSrc?: (imageSrc: string) => void;
+  setImageSrc?: React.Dispatch<React.SetStateAction<string>>;
+  pan?: Vector2;
+  setPan?: React.Dispatch<React.SetStateAction<Vector2>>;
 
   // Cropped image props
-  resolutionPx?: number; // Resolution of the cropped image (default 1)
+  /**
+   * Resolution of the cropped image.
+   * If not provided, the cropped image will have the same resolution as the source image.
+   */
+  resolutionPx?: number;
+
+  /**
+   * Callback function for when the image is cropped.
+   * If not provided, the cropped image will be downloaded.
+   * @param croppedImage - The cropped image as a data URL
+   */
+  onCrop?: (croppedImage: string) => void;
 };
 
 interface Vector2 {
@@ -21,18 +34,53 @@ interface Vector2 {
   y: number;
 }
 
+/**
+ * Image cropper component using a div element for rendering.
+ * @param resolutionPx - Resolution of the cropped image. If not provided, the cropped image will have the same resolution as the source image.
+ * @param onCrop - Callback function for when the image is cropped. If not provided, the cropped image will be downloaded.
+ * @param zoom - Zoom level of the image.
+ * @param setZoom - Setter for the zoom level.
+ * @param rotation - Rotation angle of the image.
+ * @param setRotation - Setter for the rotation angle.
+ * @param imageSrc - Source image URL.
+ * @param setImageSrc - Setter for the source image URL.
+ * @param pan - Pan position of the image.
+ * @param setPan - Setter for the pan position.
+ * @returns JSX.Element
+ * @example
+ * ```tsx
+ * <ImageCropperWithDiv />
+ * ```
+ * @example
+ * ```tsx
+ * <ImageCropperWithDiv
+ *  resolutionPx={512}
+ *  onCrop={(croppedImage) => console.log(croppedImage)}
+ * />
+ * ```
+ */
 const ImageCropperWithDiv = ({ resolutionPx, ...props }: Props) => {
   // Refs for canvas and container
   const [canvasContainerRef, canvasContainerDims] = useMeasure();
   const canvasContainerGestureRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Data refs
-  const [imageSrc, setImageSrc] = React.useState<string>("");
+  // Internal state
+  const imageState = React.useState<string>("");
+  const zoomState = React.useState<number>(1);
+  const rotationState = React.useState<number>(0);
+  const panState = React.useState<Vector2>({ x: 0, y: 0 });
+
+  // Data state
+  // Image state
+  const imageSrc = props.imageSrc ?? imageState[0];
+  const setImageSrc = props.setImageSrc ?? imageState[1];
   const [imageDimensions, setImageDimensions] = React.useState({
     width: 0,
     height: 0,
   });
   React.useEffect(() => {
+    if (!imageSrc) return;
+
     const image = new Image();
     image.src = imageSrc;
     image.src;
@@ -46,9 +94,17 @@ const ImageCropperWithDiv = ({ resolutionPx, ...props }: Props) => {
   }, [imageSrc]);
   const imageRatio = imageDimensions.width / imageDimensions.height;
 
-  const [zoom, setZoom] = React.useState<number>(1);
-  const [rotation, setRotation] = React.useState<number>(0);
-  const [pan, setPan] = React.useState<Vector2>({ x: 0, y: 0 });
+  // Zoom state
+  const zoom = props.zoom ?? zoomState[0];
+  const setZoom = props.setZoom ?? zoomState[1];
+
+  // Rotation state
+  const rotation = props.rotation ?? rotationState[0];
+  const setRotation = props.setRotation ?? rotationState[1];
+
+  // Pan state
+  const pan = props.pan ?? panState[0];
+  const setPan = props.setPan ?? panState[1];
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -89,9 +145,14 @@ const ImageCropperWithDiv = ({ resolutionPx, ...props }: Props) => {
     setPan((prev) => ({ ...prev, y }));
   }
 
-  function updateCanvas(element: HTMLCanvasElement | null = null) {
-    // Get canvas and context
-    const canvas = element;
+  function drawToCanvas() {
+    // Create canvas
+    const canvas = document.createElement("canvas");
+    canvas.style.display = "none"; // Hide canvas
+    canvas.style.width = canvasContainerDims.width + "px";
+    canvas.style.height = canvasContainerDims.height + "px";
+
+    // Get context
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
 
@@ -142,28 +203,30 @@ const ImageCropperWithDiv = ({ resolutionPx, ...props }: Props) => {
         dHeight, // height on canvas
       );
 
-      const croppedImage = element.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = croppedImage;
-      a.download = "cropped-image.png";
-      a.click();
+      // Get cropped image
+      const croppedImage = canvas.toDataURL("image/png");
+
+      // Call callback if provided
+      if (props.onCrop) props.onCrop(croppedImage);
+      // Otherwise download image
+      else {
+        // Callback
+        const a = document.createElement("a");
+        a.href = croppedImage;
+        a.download = "cropped-image.png";
+        a.click();
+      }
 
       // Clean up
-      element.remove();
+      canvas.remove();
     };
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    // Create canvas
-    const canvasElement = document.createElement("canvas");
-    canvasElement.style.display = "none"; // Hide canvas
-    canvasElement.style.width = canvasContainerDims.width + "px";
-    canvasElement.style.height = canvasContainerDims.height + "px";
-
     // Draw image
-    updateCanvas(canvasElement);
+    drawToCanvas();
   }
 
   // Gesture handling
@@ -196,7 +259,6 @@ const ImageCropperWithDiv = ({ resolutionPx, ...props }: Props) => {
     },
   );
 
-  console.log("image dimensions", imageDimensions);
   return (
     <>
       {/* Image Preview */}
@@ -218,7 +280,7 @@ const ImageCropperWithDiv = ({ resolutionPx, ...props }: Props) => {
                 imageDimensions.height > imageDimensions.width
                   ? "100%"
                   : canvasContainerDims.width * imageRatio,
-              transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
+              transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan?.x}px, ${pan?.y}px)`,
             }}
           >
             <img
